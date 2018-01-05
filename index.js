@@ -1,58 +1,18 @@
-var http = require('http');
-var express = require('express');
-var WebSocket = require('ws');
-var Pool = require('heroku-addonpool');
+'use strict';
+const $ = require('ci-herokuaddon');
 
-var app = process.env.HEROKU_APP;
-var port = process.env.PORT||80;
-var reqid = 0;
-
-var pool = Pool('pg', app, {
-  'config': /(HEROKU_POSTGRESQL|DATABASE)\S*URL/g,
-  'log', true
-});
-
-var x = express();
-x.use((req, res) => {
-  var id = reqid++;
-  console.log(`server.httpconnect(${id})`);
-  pool.remove(id).then((ans) => {
-    res.end(pool.get(ans));
+if(require.main===module) {
+  const e = process.env;
+  const opt = {};
+  if(e.CI_TIMEOUT) opt.timeout = parseInt(e.CI_TIMEOUT);
+  if(e.CI_PING) opt.ping = parseInt(e.CI_PING);
+  if(e.CI_CONFIG) opt.config = new RegExp(e.CI_CONFIG, 'g');
+  if(e.CI_LOG) opt.log = toboolean(e.CI_LOG);
+  const app = $(e.CI_ID, e.CI_APP, opt);
+  const server = http.createServer(app.http);
+  server.on('upgrade', (req, soc, head) => {
+    app.ws.handleUpgrade(req, soc, head, (ws) => app.ws.emit('connection', ws));
   });
-  setTimeout(60000, () => {
-    if(id==null) return;
-    console.log(`server.supplytimeout(${id})`);
-    pool.add(id); id = null;
-  });
-  res.on('close', () => {
-    if(id==null) return;
-    console.log(`server.httpclose(${id})`);
-    pool.add(id); id = null;
-  });
-});
-
-var server = http.createServer(x);
-var wss = new WebSocket.Server({server});
-wss.on('connection', (ws) => {
-  var id = reqid++;
-  ws.isAlive = true;
-  console.log(`server.wsconnect(${id})`);
-  pool.remove(id).then((ans) => {
-    ws.send(pool.get(ans));
-  });
-  ws.on('close', () => {
-    console.log(`server.wsclose(${id})`);
-    ws.isAlive = false;
-    pool.add(id);
-  });
-  var keepAlive = function() {
-    if(!ws.isAlive) return;
-    setTimeout(keepAlive, 8000);
-    ws.ping();
-  };
-  setTimeout(keepAlive, 8000);
-});
-
-pool.setup(app).then((ans) => {
-  server.listen(port);
-});
+  server.listen(e.PORT||80);
+  app.pool.setup();
+}

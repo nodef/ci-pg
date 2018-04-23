@@ -22,6 +22,6 @@
   },
   "homepage": "https://github.com/nodef/ci-pg#readme",
   "dependencies": {
-    "ci-herokuaddon": "0.0"
+    "ci-herokuaddon": "~0.1.3"
   }
 }
